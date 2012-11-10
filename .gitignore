@@ -1,0 +1,5 @@
+#ignores files for test repo:
+*.[oa]
+*~
+/TODO
+obj/
