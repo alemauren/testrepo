@@ -36,7 +36,7 @@ int main(int argc, char *argv[]){
 
 	/*Si se pasaron m\'as argumentos de los que se piden, abortar.*/
 	if (argc != 2) {
-		printf("Ingrese exactamente el path de un (1) archivo como argumento.\n");
+		fprintf(stderr, "Ingrese exactamente el path de un (1) archivo como argumento.\n");
 		exit(1);
 	}
 	
