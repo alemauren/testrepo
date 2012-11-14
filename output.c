@@ -2,56 +2,80 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #define MAX_STR_LENGTH 256
 #define S_EMPTY 0x00
 #define S_FULL 0xFF
-#define YEAR_SHIFT 9
-#define MONTH_SHIFT 5
-#define MONTH_MASK 0x000F
-#define DAY_MASK 0x001F
+#define DAY_SHIFT 5
+#define MONTH_SHIFT 4
+/*El sistema devuelve el año como la diferencia entre el a\~no calendario y 1900*/
+#define ANOS_90 1999-1900+100
+#define SYSTEM_YEAR_COMPARE 2000-1900
+/*Los datos est\'an guardados en formato Big Endian en el achivo, este hack
+permite reacomodar los bytes de un dato de 2 bytes (ingresado como un string)
+a un dato de 2 bytes (usado conjunto Ustring) expresado en formato Little Endian
+NOTA: para mejorar la portabilidad, deber\'ia configurarse seg\'un el entorno de ejecuci\'on:
+un macro para maquinas LE y uno (vacio) para maquinas BE.*/
 #define BE_to_LE(input) (((char*)input)[0] << 8) + ((char*)input)[1]
 
+/*Renombre conveniente*/
 typedef unsigned short Ushort;
 
+/*Forward declarations*/
 Ushort local_time_to_date(struct tm*);
 int print_Cstring(char*, FILE*);
 
 int main(int argc, char *argv[]){
 
 	FILE *file;
-	char wd[MAX_STR_LENGTH], default_string[MAX_STR_LENGTH], *long_string;
+	char working_dir[MAX_STR_LENGTH], default_string[MAX_STR_LENGTH], *string_larga;
 	Ushort cant_campos, cant_registros, campos_completos, campo, largo_str, date;
 	time_t rawtime;
 	struct tm *timeinfo;
+
+	/*Si se pasaron m\'as argumentos de los que se piden, abortar.*/
+	if (argc != 2) {
+		printf("Ingrese exactamente el path de un (1) archivo como argumento.\n");
+		exit(1);
+	}
 	
 	time(&rawtime);
 	timeinfo = localtime(&rawtime);
 	
-	getcwd(wd, MAX_STR_LENGTH);
+	getcwd(working_dir, MAX_STR_LENGTH);
+
+	/*Si se produce un error al abrir el archivo, abortar.*/
+	if(!(file = fopen(argv[1], "r+"))){
+		perror("Error al abrir el archivo");
+		exit(1);
+	}
 
 	printf("---[CONTENIDO DEL ARCHIVO]------------------------\n");
 
-	file = fopen(argv[1], "r+");
-
 	fgets(default_string, 3, file);
 	printf("Nro. de Serie: %d\n", BE_to_LE(default_string));
-	printf("Full Filename: %s/%s\n", wd, argv[1]);
+	/*NOTA: el filepath provisto en el archivo no se usa ni se updatea*/
+	printf("Full Filename: %s/%s\n", working_dir, argv[1]);
+
+
+	/*Avanzo el fileptr hasta el final del Cstring que representa el filepath*/
 	fgets(default_string, 2, file);
 	if (default_string[0] == S_EMPTY) ;
 	else if (default_string[0] == S_FULL){
 		fgets(default_string, 3, file);
 		largo_str = BE_to_LE(default_string);
-		long_string = malloc(largo_str + 1);
-		fgets(long_string, largo_str + 1, file);
-		free(long_string);
+		string_larga = malloc(largo_str + 1);
+		fgets(string_larga, largo_str + 1, file);
+		free(string_larga);
 	}else{
 		largo_str = (Ushort) *default_string;
 		fgets(default_string, largo_str + 1, file);
 	}
 
-date = local_time_to_date(timeinfo);	
-	char *blah = (char *) &date;
+	/*Update de la fecha con el tiempo del sistema*/
+	date = local_time_to_date(timeinfo);	
+	unsigned char *blah = (unsigned char*) &date;
 	fputc((unsigned int) blah[1], file);
 	fputc((unsigned int) blah[0], file);
 	printf("Fecha de Modificacion: %4d/%02d/%02d\n", timeinfo->tm_year + 1900, timeinfo->tm_mon, timeinfo->tm_mday);
@@ -59,6 +83,11 @@ date = local_time_to_date(timeinfo);
 	fgets(default_string, 3, file);
 	cant_campos = BE_to_LE(default_string);
 	printf("Cantidad de Campos Customizados: %d\n", cant_campos);
+
+
+	/*Las descripciones de los campos se guardan en un char**.
+	NOTA: si los codigos no fueren contiguos se generaria mal funcionamiento,
+	como FIX se puede implementar un diccionario sobre arreglos ordenados (pendiente)*/
 
 	char **descripciones = malloc( sizeof(char*) * cant_campos);
 
@@ -88,23 +117,28 @@ date = local_time_to_date(timeinfo);
 		printf("--------------------------\n");
 	}
 
+	/*Se libera la memoria pedida para el arreglo de descripciones*/
 	for(int l = 0; l < cant_campos; l++){
 		free(descripciones[l]);
 	}
 	free(descripciones);
 	
-	fclose(file);
+	/*Si se incurre en un error al cerrar el archivo, se aborta*/
+	if (fclose(file) == EOF){
+		perror("Error al cerrar el archivo");
+		exit(1);
+	}
 
 	return 0;
 }	
 
 Ushort local_time_to_date(struct tm *timeinfo){
 	Ushort date;
-	if (timeinfo->tm_year >= 100) date = timeinfo->tm_year - 100;
-	else date = 199 - timeinfo->tm_year; 
-	date <<= 4;
+	if (timeinfo->tm_year >= SYSTEM_YEAR_COMPARE) date = timeinfo->tm_year - SYSTEM_YEAR_COMPARE;
+	else date = ANOS_90 - timeinfo->tm_year; 
+	date <<= MONTH_SHIFT;
 	date += timeinfo->tm_mon;
-	date <<= 5;
+	date <<= DAY_SHIFT;
 	date += timeinfo->tm_mday;
 	return date;
 }
